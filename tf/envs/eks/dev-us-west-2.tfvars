@@ -1,0 +1,15 @@
+env="dev"
+app="app1"
+stack="core"
+region="us-west-2"
+vpc_cidr="10.0.0.0/16"
+enable_argocd=true
+enable_cert_manager=true
+enable_external_dns=true
+enable_aws_load_balancer_controller=false
+enable_metrics_server=true
+enable_aws_secrets_store_csi_driver_provider=true
+enable_ingress_nginx=false
+root_domain_name="kryoslab.com"
+enable_aws_argocd_ingress=true
+enable_aws_argo_workflows_ingress=true
