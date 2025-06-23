@@ -1,32 +1,17 @@
-variable "env" {
-  description = "Deployment environment (dev, qa, prod)"
+variable "vpc_cidr" {
+  description = "VPC CIDR"
   type        = string
-}
-variable "stack" {
-  description = "Logical infrastructure layer (e.g. core, shared, staticsite)"
-  type        = string
-}
-variable "app" {
-  description = "Application identifier"
-  type        = string
+  default     = "10.0.0.0/16"
 }
 variable "region" {
   description = "AWS region"
   type        = string
   default     = "us-west-2"
 }
-variable "vpc_id" {
-  description = "VPC ID to use for the EKS cluster"
-  type        = string
-}
-variable "private_subnets" {
-  description = "List of private subnet IDs for the EKS cluster"
-  type        = list(string)
-}
 variable "kubernetes_version" {
   description = "Kubernetes version"
   type        = string
-  default     = "1.33"
+  default     = "1.28"
 }
 variable "addons" {
   description = "Kubernetes addons"
@@ -40,12 +25,12 @@ variable "addons" {
 variable "gitops_addons_org" {
   description = "Git repository org/user contains for addons"
   type        = string
-  default     = "https://github.com/RonMallory"
+  default     = "https://github.com/aws-samples"
 }
 variable "gitops_addons_repo" {
   description = "Git repository contains for addons"
   type        = string
-  default     = "nats-demo"
+  default     = "eks-blueprints-add-ons"
 }
 variable "gitops_addons_revision" {
   description = "Git repository revision/branch/ref for addons"
@@ -55,7 +40,7 @@ variable "gitops_addons_revision" {
 variable "gitops_addons_basepath" {
   description = "Git repository base path for addons"
   type        = string
-  default     = "eks-blueprints-add-ons/argocd/"
+  default     = "argocd/"
 }
 variable "gitops_addons_path" {
   description = "Git repository path for addons"
@@ -67,12 +52,12 @@ variable "gitops_addons_path" {
 variable "gitops_workload_org" {
   description = "Git repository org/user contains for workload"
   type        = string
-  default     = "https://github.com/RonMallory"
+  default     = "https://github.com/aws-ia"
 }
 variable "gitops_workload_repo" {
   description = "Git repository contains for workload"
   type        = string
-  default     = "nats-demo"
+  default     = "terraform-aws-eks-blueprints"
 }
 variable "gitops_workload_revision" {
   description = "Git repository revision/branch/ref for workload"
@@ -82,19 +67,10 @@ variable "gitops_workload_revision" {
 variable "gitops_workload_basepath" {
   description = "Git repository base path for workload"
   type        = string
-  default     = "terraform-aws-eks-blueprints/gitops/"
+  default     = "patterns/gitops/"
 }
 variable "gitops_workload_path" {
   description = "Git repository path for workload"
   type        = string
   default     = "getting-started-argocd/k8s"
-}
-variable "domain_name" {
-  description = "Domain name for the EKS cluster"
-  type        = string
-}
-variable "tags" {
-  description = "Additional tags to merge with the standard set"
-  type        = map(string)
-  default     = {}
 }

@@ -39,12 +39,13 @@ provider "kubernetes" {
 }
 
 locals {
-  name_prefix = "${var.env}-${var.stack}-${var.region}"
-
-
+  name   = "getting-started-gitops"
   region = var.region
 
   cluster_version = var.kubernetes_version
+
+  vpc_cidr = var.vpc_cidr
+  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
 
   gitops_addons_url      = "${var.gitops_addons_org}/${var.gitops_addons_repo}"
   gitops_addons_basepath = var.gitops_addons_basepath
@@ -56,22 +57,11 @@ locals {
   gitops_workload_path     = var.gitops_workload_path
   gitops_workload_revision = var.gitops_workload_revision
 
-  enable_ingress           = true
-  is_route53_private_zone  = false
-  domain_name              = var.domain_name
-  argocd_subdomain         = "argocd"
-  argocd_host              = "${local.argocd_subdomain}.${local.domain_name}"
-  argocd_domain_arn        = try(data.aws_route53_zone.domain_name[0].arn, "")
-  argo_workflows_subdomain = "argoworkflows"
-  argo_workflows_host      = "${local.argo_workflows_subdomain}.${local.domain_name}"
-
-  route53_zone_arn = try(data.aws_route53_zone.domain_name[0].arn, "")
-
   aws_addons = {
-    enable_cert_manager                          = try(var.addons.enable_cert_manager, true)
+    enable_cert_manager                          = try(var.addons.enable_cert_manager, false)
     enable_aws_efs_csi_driver                    = try(var.addons.enable_aws_efs_csi_driver, false)
     enable_aws_fsx_csi_driver                    = try(var.addons.enable_aws_fsx_csi_driver, false)
-    enable_aws_cloudwatch_metrics                = try(var.addons.enable_aws_cloudwatch_metrics, true)
+    enable_aws_cloudwatch_metrics                = try(var.addons.enable_aws_cloudwatch_metrics, false)
     enable_aws_privateca_issuer                  = try(var.addons.enable_aws_privateca_issuer, false)
     enable_cluster_autoscaler                    = try(var.addons.enable_cluster_autoscaler, false)
     enable_external_dns                          = try(var.addons.enable_external_dns, false)
@@ -95,7 +85,7 @@ locals {
     enable_ack_eventbridge                       = try(var.addons.enable_ack_eventbridge, false)
   }
   oss_addons = {
-    enable_argocd                          = try(var.addons.enable_argocd, false)
+    enable_argocd                          = try(var.addons.enable_argocd, true)
     enable_argo_rollouts                   = try(var.addons.enable_argo_rollouts, false)
     enable_argo_events                     = try(var.addons.enable_argo_events, false)
     enable_argo_workflows                  = try(var.addons.enable_argo_workflows, false)
@@ -123,11 +113,7 @@ locals {
       aws_cluster_name = module.eks.cluster_name
       aws_region       = local.region
       aws_account_id   = data.aws_caller_identity.current.account_id
-      aws_vpc_id       = var.vpc_id
-    },
-    {
-      argocd_domain               = local.argocd_host
-      external_dns_domain_filters = "[${local.domain_name}]"
+      aws_vpc_id       = module.vpc.vpc_id
     },
     {
       addons_repo_url      = local.gitops_addons_url
@@ -143,11 +129,8 @@ locals {
     }
   )
 
-  argocd_apps = {
-    addons    = file("${path.module}/bootstrap/addons.yaml")
-    workloads = file("${path.module}/bootstrap/workloads.yaml")
-  }
   tags = {
+    Blueprint  = local.name
     GithubRepo = "github.com/aws-ia/terraform-aws-eks-blueprints"
   }
 }
@@ -156,13 +139,12 @@ locals {
 # GitOps Bridge: Bootstrap
 ################################################################################
 module "gitops_bridge_bootstrap" {
-  source = "gitops-bridge-dev/gitops-bridge/helm"
+  source = "github.com/gitops-bridge-dev/gitops-bridge-argocd-bootstrap-terraform?ref=v2.0.0"
 
   cluster = {
     metadata = local.addons_metadata
     addons   = local.addons
   }
-  apps = local.argocd_apps
 }
 
 ################################################################################
@@ -170,7 +152,7 @@ module "gitops_bridge_bootstrap" {
 ################################################################################
 module "eks_blueprints_addons" {
   source  = "aws-ia/eks-blueprints-addons/aws"
-  version = "~> 1.21.0"
+  version = "~> 1.0"
 
   cluster_name      = module.eks.cluster_name
   cluster_endpoint  = module.eks.cluster_endpoint
@@ -197,52 +179,80 @@ module "eks_blueprints_addons" {
   enable_velero                       = local.aws_addons.enable_velero
   enable_aws_gateway_api_controller   = local.aws_addons.enable_aws_gateway_api_controller
 
-  external_dns_route53_zone_arns = [module.route53.hosted_zone_arn] # ArgoCD Server and UI domain name is registered in Route 53
-  tags                           = local.tags
+  tags = local.tags
 }
 
 ################################################################################
-# EKS
+# EKS Cluster
 ################################################################################
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "20.37.1"
+  version = "~> 19.13"
 
-  cluster_name                   = "${local.name_prefix}-eks"
+  cluster_name                   = local.name
   cluster_version                = local.cluster_version
   cluster_endpoint_public_access = true
 
-  enable_cluster_creator_admin_permissions = true
 
-  cluster_compute_config = {
-    enabled    = true
-    node_pools = ["general-purpose"]
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
+
+  eks_managed_node_groups = {
+    initial = {
+      instance_types = ["m5.large"]
+
+      min_size     = 1
+      max_size     = 3
+      desired_size = 2
+    }
   }
-
-  enable_irsa = true
-  vpc_id      = var.vpc_id
-  subnet_ids  = var.private_subnets
-
+  # EKS Addons
+  cluster_addons = {
+    coredns    = {}
+    kube-proxy = {}
+    vpc-cni = {
+      # Specify the VPC CNI addon should be deployed before compute to ensure
+      # the addon is configured before data plane compute resources are created
+      # See README for further details
+      before_compute = true
+      most_recent    = true # To ensure access to the latest settings provided
+      configuration_values = jsonencode({
+        env = {
+          # Reference docs https://docs.aws.amazon.com/eks/latest/userguide/cni-increase-ip-addresses.html
+          ENABLE_PREFIX_DELEGATION = "true"
+          WARM_PREFIX_TARGET       = "1"
+        }
+      })
+    }
+  }
   tags = local.tags
 }
 
 ################################################################################
 # Supporting Resources
 ################################################################################
-data "aws_route53_zone" "domain_name" {
-  count        = local.enable_ingress ? 1 : 0
-  name         = local.domain_name
-  private_zone = local.is_route53_private_zone
-}
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.0"
 
-module "route53" {
-  source = "../route53"
+  name = local.name
+  cidr = local.vpc_cidr
 
-  env                  = var.env
-  app                  = var.app
-  stack                = var.stack
-  region               = local.region
-  env_hosted_zone_name = local.domain_name
-  subdomain_name       = var.region
-  tags                 = var.tags
+  azs             = local.azs
+  private_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 4, k)]
+  public_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 48)]
+
+  enable_nat_gateway = true
+  single_nat_gateway = true
+
+  public_subnet_tags = {
+    "kubernetes.io/role/elb" = 1
+  }
+
+  private_subnet_tags = {
+    "kubernetes.io/role/internal-elb" = 1
+  }
+
+  tags = local.tags
 }
