@@ -58,11 +58,11 @@ metadata:
   namespace: argocd
   name: argocd-server-ingress
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: {{metadata.annotations.eks_auto_mode_ingress_external_dns_hostname}}
+    external-dns.alpha.kubernetes.io/hostname: '{{metadata.annotations.eks_auto_mode_ingress_external_dns_hostname}}'
 spec:
   ingressClassName: alb
   rules:
-    - host: {{metadata.annotations.eks_auto_mode_ingress_hostname}}
+    - host: '{{metadata.annotations.eks_auto_mode_ingress_hostname}}'
       http:
         paths:
           - path: /
