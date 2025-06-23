@@ -67,6 +67,9 @@ locals {
 
   route53_zone_arn = try(data.aws_route53_zone.domain_name[0].arn, "")
 
+  eks_auto_mode_ingress_class_cert_arn        = module.route53.aws_acm_certificate_arn
+  eks_auto_mode_ingress_external_dns_hostname = module.route53.hosted_zone_name
+
   aws_addons = {
     enable_cert_manager                          = try(var.addons.enable_cert_manager, true)
     enable_aws_efs_csi_driver                    = try(var.addons.enable_aws_efs_csi_driver, false)
@@ -140,9 +143,12 @@ locals {
       workload_repo_basepath = local.gitops_workload_basepath
       workload_repo_path     = local.gitops_workload_path
       workload_repo_revision = local.gitops_workload_revision
-    }
+    },
+    {
+      eks_auto_mode_ingress_class_cert_arn        = local.eks_auto_mode_ingress_class_cert_arn
+      eks_auto_mode_ingress_external_dns_hostname = local.eks_auto_mode_ingress_external_dns_hostname
+    },
   )
-
   argocd_apps = {
     addons    = file("${path.module}/bootstrap/addons.yaml")
     workloads = file("${path.module}/bootstrap/workloads.yaml")
